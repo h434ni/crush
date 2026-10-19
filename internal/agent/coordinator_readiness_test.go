@@ -73,6 +73,7 @@ func TestBuildAgentReadinessSurvivesCallerCancellation(t *testing.T) {
 	require.NoError(t, err)
 	agentCfg := cfg.Config().Agents[config.AgentCoder]
 
+	require.NoError(t, coord.rebuildModels(t.Context()))
 	ctx, cancel := context.WithCancel(context.Background())
 	_, err = coord.buildAgent(ctx, p, agentCfg, false)
 	require.NoError(t, err)

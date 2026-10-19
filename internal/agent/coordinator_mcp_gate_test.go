@@ -51,6 +51,7 @@ func newGateTestCoordinator(t *testing.T, interactive bool) *coordinator {
 	require.NoError(t, err)
 	agentCfg := cfg.Config().Agents[config.AgentCoder]
 
+	require.NoError(t, coord.rebuildModels(t.Context()))
 	agent, err := coord.buildAgent(context.Background(), p, agentCfg, false)
 	require.NoError(t, err)
 	coord.mainAgent = agent
