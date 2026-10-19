@@ -1027,6 +1027,7 @@ func (c *coordinator) buildModel(ctx context.Context, slot config.SelectedModelT
 		CatwalkCfg: *catwalkModel,
 		ModelCfg:   modelCfg,
 		FlatRate:   providerCfg.FlatRate,
+		OAuth:      providerCfg.OAuthToken != nil,
 	}, nil
 }
 
@@ -1586,10 +1587,10 @@ func (c *coordinator) refreshApiKeyTemplate(ctx context.Context, providerCfg con
 	return c.rebuildModels(ctx)
 }
 
-// askToSignInAgain asks the user to sign in to Hyper again when its
-// credential is still refused after the refresh-and-retry.
+// askToSignInAgain asks the user to sign in again when an OAuth credential
+// is still refused after the refresh-and-retry.
 func (c *coordinator) askToSignInAgain(err error, model Model) {
-	if err == nil || !isUnauthorized(err) || c.notify == nil || model.ModelCfg.Provider != hyper.Name {
+	if err == nil || !isUnauthorized(err) || c.notify == nil || !model.OAuth {
 		return
 	}
 	c.notify.Publish(pubsub.CreatedEvent, notify.Notification{
