@@ -3,6 +3,7 @@ package config
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"maps"
@@ -117,6 +118,11 @@ type ConfigStore struct {
 	// cross-process refresh lock, it ensures only one token exchange runs
 	// at a time. See RefreshOAuthToken.
 	refreshSF singleflight.Group
+
+	// rejectedRefreshTokens remembers refresh tokens a provider has refused,
+	// so a dead credential costs one exchange rather than one per caller.
+	rejectedMu            sync.Mutex
+	rejectedRefreshTokens map[string]error
 
 	// exchangeToken performs the provider-specific OAuth token exchange.
 	// It is a field so tests can substitute a fake exchange without making
@@ -1056,10 +1062,31 @@ func (s *ConfigStore) usableDiskToken(scope Scope, providerID string, entryToken
 	return diskToken
 }
 
-// exchange performs the provider-specific OAuth token exchange. Tests may
-// override it via the exchangeToken field; production uses the real
-// provider clients.
+// exchange performs the provider-specific OAuth token exchange, answering
+// from memory for a refresh token the provider has already refused.
 func (s *ConfigStore) exchange(ctx context.Context, providerID, refreshToken string) (*oauth.Token, error) {
+	s.rejectedMu.Lock()
+	rejected, ok := s.rejectedRefreshTokens[refreshToken]
+	s.rejectedMu.Unlock()
+	if ok {
+		return nil, rejected
+	}
+	token, err := s.exchangeWithProvider(ctx, providerID, refreshToken)
+	var exchangeErr *oauth.TokenExchangeError
+	if errors.As(err, &exchangeErr) && exchangeErr.IsRefreshTokenRevoked() {
+		s.rejectedMu.Lock()
+		if s.rejectedRefreshTokens == nil {
+			s.rejectedRefreshTokens = make(map[string]error)
+		}
+		s.rejectedRefreshTokens[refreshToken] = err
+		s.rejectedMu.Unlock()
+	}
+	return token, err
+}
+
+// exchangeWithProvider calls the provider's token endpoint. Tests may
+// override it via the exchangeToken field.
+func (s *ConfigStore) exchangeWithProvider(ctx context.Context, providerID, refreshToken string) (*oauth.Token, error) {
 	if s.exchangeToken != nil {
 		return s.exchangeToken(ctx, providerID, refreshToken)
 	}
